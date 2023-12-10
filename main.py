@@ -32,6 +32,7 @@ def causal_language_model(model, tokenizer, in_text, lr=1e-5, num_iter=1):
     # Forward pass
     outputs = model(input_ids, labels=labels)
     loss = outputs.loss
+    print(loss)
 
     # Backward pass
     loss.backward()
@@ -45,16 +46,17 @@ def causal_language_model(model, tokenizer, in_text, lr=1e-5, num_iter=1):
     #print(f"Loss after one step of optimization: {loss.item()}")
 
 def new_training_objective(model, tokenizer, in_text, lr=1e-5, num_iter=1, device='cuda'):
-  loss_fn = KLDivLoss()
+  #loss_fn = KLDivLoss(reduction='sum')
+  loss_fn = CrossEntropyLoss()
 
   # Tokenize the input text and convert to tensor
   inputs = tokenizer(in_text, return_tensors="pt")
   input_ids = inputs["input_ids"]
 
   # Shift the input and label so that the model predicts the next token
-  input_ids_list = [item for item in input_ids.squeeze()]
-  labels = input_ids[..., 1:].contiguous()
-  input_ids = input_ids[..., :-1].contiguous()
+  #input_ids_list = [item for item in input_ids.squeeze()]
+  #labels = input_ids[..., 1:].contiguous()
+  #input_ids = input_ids[..., :-1].contiguous()
 
   # Move tensors to the same device as the model
   input_ids = input_ids.to(model.device)
@@ -66,8 +68,9 @@ def new_training_objective(model, tokenizer, in_text, lr=1e-5, num_iter=1, devic
   with torch.no_grad():
     outputs = model(input_ids)
     logits = outputs.logits[:,-1,:]
+  logits = softmax(logits)
 
-  inputs = tokenizer("<s>", return_tensors="pt")
+  inputs = tokenizer("", return_tensors="pt")
   blank_in = inputs["input_ids"].to(device)
 
   model.train()
@@ -75,11 +78,13 @@ def new_training_objective(model, tokenizer, in_text, lr=1e-5, num_iter=1, devic
   for _ in range(num_iter):
     outputs = model(blank_in)
     new_logits = outputs.logits.squeeze(dim=1)
+    #new_logits = softmax(new_logits)
 
     #print(logits.shape)
     #print(new_logits.shape)
 
     loss = loss_fn(new_logits, logits)
+    print(loss)
     loss.backward()
     optimizer.step()
 
@@ -149,6 +154,29 @@ def calculate_perplexity(model, tokenizer, context, outputs):
 
   return perplexity_lin
 
+def judge_on_alphabet(model, tokenizer, context, output):
+  context_ids = tokenizer(context, return_tensors="pt")['input_ids']
+
+  alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+
+  correct_idx = np.argwhere(np.array(alphabet) == output).item()
+
+  letters_encoded = tokenizer(alphabet, return_tensors="pt")['input_ids']
+  letters_encoded = letters_encoded[:,1]
+  
+  with torch.no_grad():
+    outputs = model(context_ids)
+  logits = outputs.logits[:,-1,:].squeeze()
+  sub_tensor = torch.ones(len(alphabet))
+  for i in range(letters_encoded.shape[0]):
+      letter_idx = letters_encoded[i]
+      sub_tensor[i] = logits[letter_idx]
+
+  logits = softmax(sub_tensor)
+  #print(logits)
+  #print(correct_idx)
+  return logits[correct_idx]
+
 def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
   # Load tokenizer and model
   #model_name = 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
@@ -174,12 +202,15 @@ def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
     #out_txt = greedy_produce_text(in_txt, model, tokenizer, device=device)
     out_txt = ans
     full_text = in_txt + out_txt
-    ppl3 = calculate_perplexity(model, tokenizer, '', out_txt)
-    ppl1 = calculate_perplexity(model, tokenizer, in_txt, out_txt)
+    #ppl3 = calculate_perplexity(model, tokenizer, '', out_txt)
+    ppl3 = judge_on_alphabet(model, tokenizer, '', out_txt)
+    #ppl1 = calculate_perplexity(model, tokenizer, in_txt, out_txt)
+    ppl1 = judge_on_alphabet(model, tokenizer, in_txt, out_txt)
     #print(f'Initial perplexity = {ppl1}')
 
     causal_language_model(model, tokenizer, in_txt, lr=lr, num_iter=num_iter)
-    ppl2 = calculate_perplexity(model, tokenizer, '', out_txt)
+    #ppl2 = calculate_perplexity(model, tokenizer, '', out_txt)
+    ppl2 = judge_on_alphabet(model, tokenizer, '', out_txt)
     #print(f'CLM training perplexity = {ppl2}')
 
     del model
@@ -194,7 +225,8 @@ def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
     #print(f'Initial perplexity = {ppl1}')
 
     new_training_objective(model, tokenizer, in_txt, lr=lr, num_iter=num_iter, device=device)
-    ppl4 = calculate_perplexity(model, tokenizer, '', out_txt)
+    #ppl4 = calculate_perplexity(model, tokenizer, '', out_txt)
+    ppl4 = judge_on_alphabet(model, tokenizer, '', out_txt)
     #print(f'New training perplexity = {ppl2}')
 
     del model
@@ -217,7 +249,7 @@ if __name__ == '__main__':
         device = 'cpu'
         print(device)
         ans = ans_s[i]
-        perplexities = test_input_string(in_text, ans, device, lr=2e-3, num_iter=1)
+        perplexities = test_input_string(in_text, ans, device, lr=8e-3, num_iter=10)
         orig = perplexities[0]
         no_context = perplexities[2]
         delta_clm = perplexities[1]
