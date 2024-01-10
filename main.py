@@ -105,6 +105,10 @@ def greedy_produce_text(in_text, model, tokenizer, device='cuda'):
 
 softmax = torch.nn.Softmax(dim=-1)
 
+'''
+  Given a full prompt, consisting of context+outputs, this function calculates the perplexity of
+  the outputs only (not including the context).
+'''
 def calculate_perplexity(model, tokenizer, context, outputs):
 
   context_ids = tokenizer(context, return_tensors="pt")['input_ids'][0]
@@ -112,33 +116,15 @@ def calculate_perplexity(model, tokenizer, context, outputs):
 
   full_ids = {'input_ids' : torch.concat((context_ids, output_ids)).unsqueeze(0), 'attention_mask' : torch.ones(len(context_ids) + len(output_ids)).unsqueeze(0)}
 
-  #print('STARTING')
-  #print(context)
-  #print(outputs)
-
   full_text = context + outputs
-  #full_ids = tokenizer(full_text, return_tensors="pt", return_token_type_ids=False)
-
-  #print(full_ids)
   full_ids['input_ids'] = full_ids['input_ids'].to(device)
 
-  #print(tokenizer.decode(context_ids))
-  #print(tokenizer.decode(output_ids))
-  #print(tokenizer.decode(full_ids['input_ids'][0]))
-  #raise Exception
-  #print(len(context_ids) + len(output_ids))
-  #print(len(full_ids['input_ids'][0]))
   assert(len(context_ids) + len(output_ids) == len(full_ids['input_ids'][0]))
 
   with torch.no_grad():
     outputs = model(**full_ids)
   logits = outputs.logits.squeeze(dim=0)
   logits = softmax(logits)
-
-  #print('LEN of logits, context, outputs')
-  #print(logits.shape)
-  #print(len(context_ids))
-  #print(len(output_ids))
 
   grabbed_logits = []
   for i in range(len(output_ids)):
@@ -147,7 +133,6 @@ def calculate_perplexity(model, tokenizer, context, outputs):
     correct_logit = math.log(logits[time_idx, token_idx].item())
     grabbed_logits.append(correct_logit)
 
-  #print(grabbed_logits)
   perplexity_log = - sum(grabbed_logits) / len(grabbed_logits)
 
   perplexity_lin = math.exp(perplexity_log)
@@ -181,7 +166,7 @@ def generate_text_from_prompt(prompt, model):
     response = model.generate(prompt, max_new_tokens=5, do_sample=False)
     return response
 
-def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1, prompt2=''):
+def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1, contextless_prompt = '', prompt2=''):
   # Load tokenizer and model
   #model_name = 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
   model_name = 'huggyllama/llama-7b'
@@ -200,63 +185,67 @@ def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1, prompt2=''):
   ppl3 = 0
   ppl4 = 0
 
-  if True:
-    model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)#, quantization_config=quantization)
+  # Load fresh model
+  model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)#, quantization_config=quantization)
 
-    if prompt2 is not None:
-        full_prompt = torch.tensor([tokenizer(in_txt + ' ' + prompt2)['input_ids']])
-        response1 = generate_text_from_prompt(full_prompt, model)
-        response1 = tokenizer.decode(response1.flatten())
-        print(f'Response with context = {response1}')
-    model.to(device)
+  if prompt2 is not None:
+      full_prompt = torch.tensor([tokenizer(in_txt + ' ' + prompt2)['input_ids']])
+      response1 = generate_text_from_prompt(full_prompt, model)
+      response1 = tokenizer.decode(response1.flatten())
+      print(f'Response with context = {response1}')
+  model.to(device)
 
-    #out_txt = greedy_produce_text(in_txt, model, tokenizer, device=device)
-    out_txt = ans
-    full_text = in_txt + out_txt
-    #ppl3 = calculate_perplexity(model, tokenizer, '', out_txt)
-    ppl3 = judge_on_alphabet(model, tokenizer, '', out_txt)
-    #ppl1 = calculate_perplexity(model, tokenizer, in_txt, out_txt)
-    ppl1 = judge_on_alphabet(model, tokenizer, in_txt, out_txt)
-    #print(f'Initial perplexity = {ppl1}')
+  if contextless_prompt != '':
+    full_in = in_txt + ' ' + contextless_prompt
+  else:
+    full_in = in_txt
 
-    causal_language_model(model, tokenizer, in_txt, lr=2e-5, num_iter=num_iter)
-    #ppl2 = calculate_perplexity(model, tokenizer, '', out_txt)
-    ppl2 = judge_on_alphabet(model, tokenizer, '', out_txt)
-    #print(f'CLM training perplexity = {ppl2}')
+  #out_txt = greedy_produce_text(in_txt, model, tokenizer, device=device)
+  out_txt = ans
+  full_text = in_txt + out_txt
+  ppl3 = calculate_perplexity(model, tokenizer, contextless_prompt, out_txt)
+  #ppl3 = judge_on_alphabet(model, tokenizer, '', out_txt)
+  ppl1 = calculate_perplexity(model, tokenizer, full_in, out_txt)
+  #ppl1 = judge_on_alphabet(model, tokenizer, in_txt, out_txt)
+  #print(f'Initial perplexity = {ppl1}')
 
-    if prompt2 is not None:
-        partial_prompt = torch.tensor([tokenizer(prompt2)['input_ids']])
-        response2 = generate_text_from_prompt(partial_prompt, model)
-        response2 = tokenizer.decode(response2.flatten())
-        print(f'Response after CLM = {response2}')
+  # Implement causal language modeling
+  causal_language_model(model, tokenizer, in_txt, lr=2e-5, num_iter=num_iter)
+  ppl2 = calculate_perplexity(model, tokenizer, contextless_prompt, out_txt)
+  #ppl2 = judge_on_alphabet(model, tokenizer, '', out_txt)
+  #print(f'CLM training perplexity = {ppl2}')
 
-    del model
-    torch.cuda.empty_cache()
-    gc.collect()
+  if prompt2 is not None:
+      partial_prompt = torch.tensor([tokenizer(prompt2)['input_ids']])
+      response2 = generate_text_from_prompt(partial_prompt, model)
+      response2 = tokenizer.decode(response2.flatten())
+      print(f'Response after CLM = {response2}')
+
+  del model
+  torch.cuda.empty_cache()
+  gc.collect()
   
-  if True:
-    model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)#, quantization_config=quantization)
-    model.to(device)
+  # Try new training method
+  model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)#, quantization_config=quantization)
+  model.to(device)
 
-    #ppl3 = calculate_perplexity(model, tokenizer, in_txt, out_txt)
-    #print(f'Initial perplexity = {ppl1}')
+  #ppl3 = calculate_perplexity(model, tokenizer, in_txt, out_txt)
 
-    new_training_objective(model, tokenizer, in_txt, lr=8e-2, num_iter=num_iter, device=device)
-    #ppl4 = calculate_perplexity(model, tokenizer, '', out_txt)
-    ppl4 = judge_on_alphabet(model, tokenizer, '', out_txt)
-    #print(f'New training perplexity = {ppl2}')
+  new_training_objective(model, tokenizer, in_txt, lr=8e-5, num_iter=num_iter, device=device)
+  ppl4 = calculate_perplexity(model, tokenizer, contextless_prompt, out_txt)
+  #ppl4 = judge_on_alphabet(model, tokenizer, '', out_txt)
 
-    if prompt2 is not None:
-        response3 = generate_text_from_prompt(partial_prompt, model)
-        response3 = tokenizer.decode(response3.flatten())
-        print(f'Response after NEW = {response3}')
+  if prompt2 is not None:
+      response3 = generate_text_from_prompt(partial_prompt, model)
+      response3 = tokenizer.decode(response3.flatten())
+      print(f'Response after NEW = {response3}')
 
-    del model
-    torch.cuda.empty_cache()
-    gc.collect()
+  del model
+  torch.cuda.empty_cache()
+  gc.collect()
 
   return [ppl1, ppl2, ppl3, ppl4]
-'''
+
 if __name__ == '__main__':
     in_texts = ['My pants are red.',
                 'a b c d ',
@@ -264,7 +253,15 @@ if __name__ == '__main__':
                 't u v w x y ',
                 'q r s t ']
 
+    in_texts = [
+      'My pants are red.',
+      'My pants are blue.'
+    ]
+
     ans_s = ['z', 'e', 'p', 'z', 'u']
+
+    ans_s = ['Red', 'Blue']
+    contextless_prompt = 'What color are my pants?'
 
     for i, in_text in enumerate(in_texts):
         print(f'Text = {in_text}')
@@ -272,7 +269,7 @@ if __name__ == '__main__':
         device = 'cpu'
         print(device)
         ans = ans_s[i]
-        perplexities = test_input_string(in_text, ans, device, lr=2e-3, num_iter=5, prompt2=None)
+        perplexities = test_input_string(in_text, ans, device, lr=2e-3, num_iter=5, contextless_prompt=contextless_prompt, prompt2=None)
         orig = perplexities[0]
         no_context = perplexities[2]
         delta_clm = perplexities[1]
@@ -326,3 +323,4 @@ for i in range(num_experiments):
         print(f'CLM MEAN = {statistics.mean(delta_clm_s)}, STDDEV = {statistics.stdev(delta_clm_s)}')
         print(f'NEW MEAN = {statistics.mean(delta_new_s)}, STDDEV = {statistics.stdev(delta_new_s)}')
     print()
+'''
