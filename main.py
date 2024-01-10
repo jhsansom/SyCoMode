@@ -177,10 +177,16 @@ def judge_on_alphabet(model, tokenizer, context, output):
   #print(correct_idx)
   return logits[correct_idx]
 
-def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
+def generate_text_from_prompt(prompt, model):
+    response = model.generate(prompt, max_new_tokens=5, do_sample=False)
+    return response
+
+def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1, prompt2=''):
   # Load tokenizer and model
   #model_name = 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
   model_name = 'huggyllama/llama-7b'
+  #model_name = 'huggyllama/llama-13b'
+  #model_name = 'lmsys/vicuna-13b-delta-v0'
   #model_name = 'abhinavkulkarni/meta-llama-Llama-2-7b-chat-hf-w4-g128-awq'
   tokenizer = AutoTokenizer.from_pretrained(model_name, add_bos_token=False, low_cpu_mem_usage=True)
   tokenizer.add_bos_token = False
@@ -197,6 +203,11 @@ def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
   if True:
     model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)#, quantization_config=quantization)
 
+    if prompt2 is not None:
+        full_prompt = torch.tensor([tokenizer(in_txt + ' ' + prompt2)['input_ids']])
+        response1 = generate_text_from_prompt(full_prompt, model)
+        response1 = tokenizer.decode(response1.flatten())
+        print(f'Response with context = {response1}')
     model.to(device)
 
     #out_txt = greedy_produce_text(in_txt, model, tokenizer, device=device)
@@ -208,10 +219,16 @@ def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
     ppl1 = judge_on_alphabet(model, tokenizer, in_txt, out_txt)
     #print(f'Initial perplexity = {ppl1}')
 
-    causal_language_model(model, tokenizer, in_txt, lr=lr, num_iter=num_iter)
+    causal_language_model(model, tokenizer, in_txt, lr=2e-5, num_iter=num_iter)
     #ppl2 = calculate_perplexity(model, tokenizer, '', out_txt)
     ppl2 = judge_on_alphabet(model, tokenizer, '', out_txt)
     #print(f'CLM training perplexity = {ppl2}')
+
+    if prompt2 is not None:
+        partial_prompt = torch.tensor([tokenizer(prompt2)['input_ids']])
+        response2 = generate_text_from_prompt(partial_prompt, model)
+        response2 = tokenizer.decode(response2.flatten())
+        print(f'Response after CLM = {response2}')
 
     del model
     torch.cuda.empty_cache()
@@ -224,24 +241,30 @@ def test_input_string(in_txt, ans, device, lr=1e-4, num_iter=1):
     #ppl3 = calculate_perplexity(model, tokenizer, in_txt, out_txt)
     #print(f'Initial perplexity = {ppl1}')
 
-    new_training_objective(model, tokenizer, in_txt, lr=lr, num_iter=num_iter, device=device)
+    new_training_objective(model, tokenizer, in_txt, lr=8e-2, num_iter=num_iter, device=device)
     #ppl4 = calculate_perplexity(model, tokenizer, '', out_txt)
     ppl4 = judge_on_alphabet(model, tokenizer, '', out_txt)
     #print(f'New training perplexity = {ppl2}')
+
+    if prompt2 is not None:
+        response3 = generate_text_from_prompt(partial_prompt, model)
+        response3 = tokenizer.decode(response3.flatten())
+        print(f'Response after NEW = {response3}')
 
     del model
     torch.cuda.empty_cache()
     gc.collect()
 
   return [ppl1, ppl2, ppl3, ppl4]
-
+'''
 if __name__ == '__main__':
-    in_texts = ['a b c d ',
+    in_texts = ['My pants are red.',
+                'a b c d ',
                 'l m n o ',
-                '1 2 3 4 ',
-                '4 5 6 7 ']
+                't u v w x y ',
+                'q r s t ']
 
-    ans_s = ['e', 'p', '5', '8']
+    ans_s = ['z', 'e', 'p', 'z', 'u']
 
     for i, in_text in enumerate(in_texts):
         print(f'Text = {in_text}')
@@ -249,9 +272,57 @@ if __name__ == '__main__':
         device = 'cpu'
         print(device)
         ans = ans_s[i]
-        perplexities = test_input_string(in_text, ans, device, lr=8e-3, num_iter=10)
+        perplexities = test_input_string(in_text, ans, device, lr=2e-3, num_iter=5, prompt2=None)
         orig = perplexities[0]
         no_context = perplexities[2]
         delta_clm = perplexities[1]
         delta_new = perplexities[3]
         print(f'ORIG = {orig:.3f}, WO_CONTEXT = {no_context:.3f}, CLM = {delta_clm:.3f}, NEW = {delta_new:.3f}')
+
+'''
+
+import random
+import statistics
+
+alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+
+orig_s = []
+no_context_s = []
+delta_clm_s = []
+delta_new_s = []
+num_experiments = 100
+for i in range(num_experiments):
+    print(f'Epoch {i} =============================================')
+    rand_idx = random.randint(0, 21)
+    max_len = 25 - rand_idx
+    rand_len = random.randint(4, max_len)
+    string_to_feed = ''
+    for j in range(rand_len):
+        string_to_feed += alphabet[rand_idx+j]
+        string_to_feed += ' '
+
+    ans = alphabet[rand_idx+rand_len]
+
+
+    print(f'Input = {string_to_feed}')
+    print(f'Correct ans = {ans}')
+
+    device = 'cpu'
+    perplexities = test_input_string(string_to_feed, ans, device, lr=2e-3, num_iter=2, prompt2=None)
+    orig = perplexities[0].item()
+    no_context = perplexities[2].item()
+    delta_clm = perplexities[1].item()
+    delta_new = perplexities[3].item()
+
+    orig_s.append(orig)
+    no_context_s.append(no_context)
+    delta_clm_s.append(delta_clm)
+    delta_new_s.append(delta_new)
+
+    print(f'W_CONTEXT = {orig:.3f}, NO_CONTEXT = {no_context:.3f}, CLM = {delta_clm:.3f}, NEW = {delta_new:.3f}')
+    if i > 0:
+        print(f'W_CONTEXT MEAN = {statistics.mean(orig_s)}, STDDEV = {statistics.stdev(orig_s)}')
+        print(f'NO_CONTEXT MEAN = {statistics.mean(no_context_s)}, STDDEV = {statistics.stdev(no_context_s)}')
+        print(f'CLM MEAN = {statistics.mean(delta_clm_s)}, STDDEV = {statistics.stdev(delta_clm_s)}')
+        print(f'NEW MEAN = {statistics.mean(delta_new_s)}, STDDEV = {statistics.stdev(delta_new_s)}')
+    print()
