@@ -4,7 +4,7 @@ import numpy as np
 import math
 import gc
 
-from objectives import causal_language_model, new_training_objective
+from objectives import causal_language_model, new_training_objective, distill_on_hidden_layer
 
 softmax = torch.nn.Softmax(dim=-1)
 
@@ -12,7 +12,7 @@ softmax = torch.nn.Softmax(dim=-1)
     Given a full prompt, consisting of context+outputs, this function calculates the perplexity of
     the outputs only (not including the context).
 '''
-def calculate_perplexity(model, tokenizer, context, outputs):
+def calculate_perplexity(model, tokenizer, context, outputs, device='cpu'):
 
     context_ids = tokenizer(context, return_tensors="pt")['input_ids'][0]
     output_ids = tokenizer(outputs, return_tensors="pt")['input_ids'][0][1:]
@@ -46,7 +46,7 @@ def calculate_perplexity(model, tokenizer, context, outputs):
     This function computes a probability distribution over possible letter responses and then
     returns the probability of the correct one.
 '''
-def judge_on_alphabet(model, tokenizer, context, output):
+def judge_on_alphabet(model, tokenizer, context, output, device='cpu'):
     context_ids = tokenizer(context, return_tensors="pt")['input_ids']
 
     alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 
@@ -112,12 +112,12 @@ def test_input_string(model_name, ans, in_txt, extra_txt='', judgement_func=calc
     model.to(device)
 
     full_text = in_txt + ans
-    result_clm = judgement_func(model, tokenizer, extra_txt, ans)
-    result_fullcontext = judgement_func(model, tokenizer, full_in, ans)
+    result_clm = judgement_func(model, tokenizer, extra_txt, ans, device=device)
+    result_fullcontext = judgement_func(model, tokenizer, full_in, ans, device=device)
 
     # Implement causal language modeling and measure results
     causal_language_model(model, tokenizer, in_txt, lr=lr, num_iter=num_iter, verbose=True)
-    result_nocontext = judgement_func(model, tokenizer, extra_txt, ans)
+    result_nocontext = judgement_func(model, tokenizer, extra_txt, ans, device=device)
 
     # Get rid of model so we can download a new one
     del model
@@ -130,7 +130,7 @@ def test_input_string(model_name, ans, in_txt, extra_txt='', judgement_func=calc
 
     # Implement new training objective and measure results
     new_training_objective(model, tokenizer, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True)
-    result_newmethod = judgement_func(model, tokenizer, extra_txt, ans)
+    result_newmethod = judgement_func(model, tokenizer, extra_txt, ans, device=device)
 
     # Get rid of model again
     del model
