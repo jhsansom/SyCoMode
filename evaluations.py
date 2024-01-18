@@ -4,7 +4,7 @@ import numpy as np
 import math
 import gc
 
-from objectives import causal_language_model, new_training_objective, distill_on_hidden_layer
+from objectives import causal_language_model, new_training_objective, distill_on_hidden_layer, distill_on_generated_text
 
 softmax = torch.nn.Softmax(dim=-1)
 
@@ -94,7 +94,7 @@ def judge_on_alphabet(model, tokenizer, context, output, device='cpu'):
 def test_input_string(model_name, ans, in_txt, extra_txt='', judgement_func=calculate_perplexity, device='cpu', lr=1e-4, num_iter=1):
     # Load tokenizer and model
     tokenizer = AutoTokenizer.from_pretrained(model_name, add_bos_token=False, low_cpu_mem_usage=True)
-    tokenizer.add_bos_token = False
+    tokenizer.add_bos_token = False # Pretty sure this flag does not work
 
     if extra_txt != '':
         full_in = in_txt + ' ' + extra_txt
@@ -129,7 +129,7 @@ def test_input_string(model_name, ans, in_txt, extra_txt='', judgement_func=calc
     model.to(device)
 
     # Implement new training objective and measure results
-    new_training_objective(model, tokenizer, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True)
+    distill_on_generated_text(model, tokenizer, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True)
     result_newmethod = judgement_func(model, tokenizer, extra_txt, ans, device=device)
 
     # Get rid of model again

@@ -1,6 +1,7 @@
 from torch.optim import SGD
 from torch.nn import CrossEntropyLoss, KLDivLoss, MSELoss
 import torch
+from transformers import GenerationConfig
 
 softmax = torch.nn.Softmax(dim=-1)
 
@@ -109,6 +110,73 @@ def distill_on_hidden_layer(model, tokenizer, in_text, lr=1e-5, num_iter=1, devi
         new_logits = outputs.hidden_states[-1][:,-1,:]
 
         loss = loss_fn(new_logits, logits)
+        if verbose:
+            print(f"Loss after step {i} of optimization: {loss.item()}")
+        loss.backward()
+        optimizer.step()
+
+        # Clear gradients
+        optimizer.zero_grad()
+
+def produce_text(model, tokenizer, in_text, num_outputs=1, device='cuda', return_probs=False):
+    num_gen = 20
+    model_inputs = tokenizer(in_text, return_tensors="pt", return_token_type_ids=False)
+    output_ids = []
+    output_tokens = []
+    probs = []
+    for _ in range(num_outputs):
+        in_len = len(model_inputs['input_ids'][0])
+
+        model_inputs['input_ids'] = model_inputs['input_ids'].to(device)
+
+        generation_config = GenerationConfig(min_new_tokens=num_gen, max_new_tokens=num_gen, do_sample=True, output_scores=True, return_dict_in_generate=True, top_k=num_outputs)
+
+        greedy_output = model.generate(**model_inputs, generation_config=generation_config)
+        sequences = greedy_output['sequences'].squeeze()
+        scores = greedy_output['scores']
+        output_id = [item for item in sequences[in_len:]]
+        output_probs = [scores[i].squeeze()[item] for i, item in enumerate(output_id)]
+
+        tokens = tokenizer.decode(output_id)
+        if len(output_id) == num_gen:
+            output_ids.append(output_id)
+            output_tokens.append(tokens)
+            probs.append(output_probs)
+
+    output_ids = torch.tensor(output_ids)
+    probs = torch.tensor(probs)
+
+    print(output_tokens)
+    print(probs)
+    
+    if return_probs:
+        return (output_ids, probs)
+    else:
+        return output_tokens
+
+
+def distill_on_generated_text(model, tokenizer, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False):
+    loss_fn = MSELoss()
+    #loss_fn = CrossEntropyLoss()
+    optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.01)
+
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    with torch.no_grad():
+        (gen_ids, probs) = produce_text(model, tokenizer, in_text, num_outputs=10, device=device, return_probs=True)
+        #probs = softmax(probs)
+
+    model.train()
+    for i in range(num_iter):
+        # Feed generated outputs through the model with no context
+        outputs = model(gen_ids)
+
+        # Extract the logits computed by the model for the generated words
+        new_logits = outputs.logits
+        gen_ids_flattened = gen_ids.unsqueeze(-1)
+        new_logits = new_logits.gather(-1, gen_ids_flattened).squeeze()
+
+        loss = loss_fn(new_logits, probs)
+
         if verbose:
             print(f"Loss after step {i} of optimization: {loss.item()}")
         loss.backward()

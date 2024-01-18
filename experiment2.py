@@ -8,6 +8,7 @@ must distill the prompt without knowing the future contexts in which that inform
 '''
 
 model_name = 'huggyllama/llama-7b'
+#model_name = 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
 
 in_texts = [
     'The Bohr tower is in Topeka.',
@@ -29,7 +30,7 @@ for i, in_text in enumerate(in_texts):
     device = 'cpu'
     print(device)
     ans = ans_s[i]
-    perplexities = test_input_string(model_name, ans, in_text, extra_txt=extra_txt, device=device, lr=8e-2, num_iter=25)
+    perplexities = test_input_string(model_name, ans, in_text, extra_txt=extra_txt, device=device, lr=2e-3, num_iter=5)
     orig = perplexities[0]
     no_context = perplexities[2]
     delta_clm = perplexities[1]
