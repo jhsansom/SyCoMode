@@ -145,9 +145,6 @@ def produce_text(model, tokenizer, in_text, num_outputs=1, device='cuda', return
 
     output_ids = torch.tensor(output_ids)
     probs = torch.tensor(probs)
-
-    print(output_tokens)
-    print(probs)
     
     if return_probs:
         return (output_ids, probs)
@@ -156,14 +153,19 @@ def produce_text(model, tokenizer, in_text, num_outputs=1, device='cuda', return
 
 
 def distill_on_generated_text(model, tokenizer, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False):
-    loss_fn = MSELoss()
-    #loss_fn = CrossEntropyLoss()
+    #loss_fn = MSELoss()
+    loss_fn = CrossEntropyLoss()
     optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.01)
+
+    num_outputs = 10
 
     tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     with torch.no_grad():
-        (gen_ids, probs) = produce_text(model, tokenizer, in_text, num_outputs=10, device=device, return_probs=True)
-        #probs = softmax(probs)
+        (gen_ids, probs) = produce_text(model, tokenizer, in_text, num_outputs=num_outputs, device=device, return_probs=True)
+        probs = softmax(probs)
+
+    bos_tokens = torch.tensor([tokenizer.bos_token_id]*num_outputs).unsqueeze(1)
+    gen_ids = torch.cat((bos_tokens, gen_ids), dim=1)
 
     model.train()
     for i in range(num_iter):
@@ -171,8 +173,8 @@ def distill_on_generated_text(model, tokenizer, in_text, lr=1e-5, num_iter=1, de
         outputs = model(gen_ids)
 
         # Extract the logits computed by the model for the generated words
-        new_logits = outputs.logits
-        gen_ids_flattened = gen_ids.unsqueeze(-1)
+        new_logits = outputs.logits[:,:-1]
+        gen_ids_flattened = gen_ids[:,1:].unsqueeze(-1)
         new_logits = new_logits.gather(-1, gen_ids_flattened).squeeze()
 
         loss = loss_fn(new_logits, probs)
