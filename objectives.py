@@ -129,7 +129,7 @@ def produce_text(model, tokenizer, in_text, num_outputs=1, device='cuda', return
 
         model_inputs['input_ids'] = model_inputs['input_ids'].to(device)
 
-        generation_config = GenerationConfig(min_new_tokens=num_gen, max_new_tokens=num_gen, do_sample=True, output_scores=True, return_dict_in_generate=True, top_k=num_outputs)
+        generation_config = GenerationConfig(min_new_tokens=num_gen, max_new_tokens=num_gen, do_sample=True, output_scores=True, return_dict_in_generate=True)
 
         greedy_output = model.generate(**model_inputs, generation_config=generation_config)
         sequences = greedy_output['sequences'].squeeze()
@@ -182,6 +182,58 @@ def distill_on_generated_text(model, tokenizer, in_text, lr=1e-5, num_iter=1, de
         if verbose:
             print(f"Loss after step {i} of optimization: {loss.item()}")
         loss.backward()
+        optimizer.step()
+
+        # Clear gradients
+        optimizer.zero_grad()
+
+def distill_to_mem_token(model, tokenizer, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False):
+    #loss_fn = MSELoss()
+    loss_fn = CrossEntropyLoss()
+    optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.01)
+
+    num_outputs = 10
+    mem_token = '[MEM]'
+
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    tokenizer.add_tokens(mem_token)
+    model.resize_token_embeddings(len(tokenizer))
+    mem_token_id = tokenizer.convert_tokens_to_ids(mem_token)
+    with torch.no_grad():
+        (gen_ids, probs) = produce_text(model, tokenizer, in_text, num_outputs=num_outputs, device=device, return_probs=True)
+        probs = softmax(probs)
+    
+    bos_tokens = torch.tensor([tokenizer.bos_token_id]*num_outputs).unsqueeze(1)
+    mem_tokens = torch.tensor([mem_token_id]*num_outputs).unsqueeze(1)
+    gen_ids = torch.cat((bos_tokens, mem_tokens, gen_ids), dim=1)
+
+    model.train()
+    embeddings = model.get_input_embeddings()
+    embeddings.weight[mem_token_id].retain_grad()
+    for i in range(num_iter):
+        # Feed generated outputs through the model with no context
+        outputs = model(gen_ids)
+
+        # Extract the logits computed by the model for the generated words
+        new_logits = outputs.logits[:,1:-1]
+        gen_ids_flattened = gen_ids[:,2:].unsqueeze(-1)
+        new_logits = new_logits.gather(-1, gen_ids_flattened).squeeze()
+
+        loss = loss_fn(new_logits, probs)
+
+        if verbose:
+            print(f"Loss after step {i} of optimization: {loss.item()}")
+        loss.backward()
+
+        for i in range(len(tokenizer)):
+            if i != mem_token_id:
+                embed_size = embeddings.weight.grad[i,:].shape
+                embeddings.weight.grad[i,:] = torch.zeros(embed_size)
+
+        for name, param in model.named_parameters():
+            if (name != 'model.embed_tokens.weight') and (param.grad is not None):
+                param.grad.zero_()
+
         optimizer.step()
 
         # Clear gradients
