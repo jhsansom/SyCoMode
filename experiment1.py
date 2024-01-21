@@ -33,7 +33,6 @@ alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'
 
 orig_s = []
 no_context_s = []
-delta_clm_s = []
 delta_new_s = []
 num_experiments = 100
 for i in range(num_experiments):
@@ -65,21 +64,18 @@ for i in range(num_experiments):
         num_iter=num_iter)
 
     orig = probs[0].item()
-    no_context = probs[2].item()
-    delta_clm = probs[1].item()
-    delta_new = probs[3].item()
+    no_context = probs[1].item()
+    delta_new = probs[2].item()
 
     # Append result for this loop iteration to a running list of results
     orig_s.append(orig)
     no_context_s.append(no_context)
-    delta_clm_s.append(delta_clm)
     delta_new_s.append(delta_new)
 
     # Print out statistics thus far
-    print(f'W_CONTEXT = {orig:.3f}, NO_CONTEXT = {no_context:.3f}, CLM = {delta_clm:.3f}, NEW = {delta_new:.3f}')
+    print(f'W_CONTEXT = {orig:.3f}, NO_CONTEXT = {no_context:.3f}, DISTILLED = {delta_new:.3f}')
     if i > 0:
         print(f'W_CONTEXT MEAN = {statistics.mean(orig_s)}, STDDEV = {statistics.stdev(orig_s)}')
         print(f'NO_CONTEXT MEAN = {statistics.mean(no_context_s)}, STDDEV = {statistics.stdev(no_context_s)}')
-        print(f'CLM MEAN = {statistics.mean(delta_clm_s)}, STDDEV = {statistics.stdev(delta_clm_s)}')
-        print(f'NEW MEAN = {statistics.mean(delta_new_s)}, STDDEV = {statistics.stdev(delta_new_s)}')
+        print(f'DISTILLED MEAN = {statistics.mean(delta_new_s)}, STDDEV = {statistics.stdev(delta_new_s)}')
     print()

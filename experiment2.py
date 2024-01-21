@@ -50,7 +50,6 @@ for i, in_text in enumerate(in_texts):
         num_iter=num_iter, 
         num_mem_tokens=num_mem_tokens)
     orig = perplexities[0]
-    no_context = perplexities[2]
-    delta_clm = perplexities[1]
-    delta_new = perplexities[3]
-    print(f'ORIG = {orig:.3f}, WO_CONTEXT = {no_context:.3f}, CLM = {delta_clm:.3f}, NEW = {delta_new:.3f}')
+    no_context = perplexities[1]
+    delta_new = perplexities[2]
+    print(f'ORIG = {orig:.3f}, WO_CONTEXT = {no_context:.3f}, DISTILLED = {delta_new:.3f}')

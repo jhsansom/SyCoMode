@@ -104,46 +104,29 @@ def test_input_string(model_name,
         num_mem_tokens=0
     ):
 
+    # Load model
+    model = Model(model_name, num_mem_tokens=num_mem_tokens)
+    model.to(device)
+
+    # Get prompts
     if extra_txt != '':
         full_in = in_txt + ' ' + extra_txt
     else:
         full_in = in_txt
-
-    # Initialize perplexity values to zero
-    result_fullcontext = 0
-    result_nocontext = 0
-    result_clm = 0
-    result_newmethod = 0
-
-    # Load fresh model
-    model = Model(model_name)
-    model.to(device)
-
     full_text = in_txt + ans
-    result_clm = judgement_func(model, extra_txt, ans, device=device)
+
+    # Get results before training
     result_fullcontext = judgement_func(model, full_in, ans, device=device)
-
-    # Implement causal language modeling and measure results
-    causal_language_model(model, in_txt, lr=lr, num_iter=num_iter, verbose=True)
     result_nocontext = judgement_func(model, extra_txt, ans, device=device)
-
-    # Get rid of model so we can download a new one
-    del model
-    torch.cuda.empty_cache()
-    gc.collect()
-    
-    # Try new training method
-    model = Model(model_name, num_mem_tokens=num_mem_tokens)
-    model.to(device)
 
     # Implement new training objective and measure results
     objective_function(model, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True)
     result_newmethod = judgement_func(model, extra_txt, ans, device=device, prepend_mem_tokens=True)
 
-    # Get rid of model again
+    # Get rid of model
     del model
     torch.cuda.empty_cache()
     gc.collect()
 
     # Return all perplexity values
-    return [result_fullcontext, result_nocontext, result_clm, result_newmethod]
+    return [result_fullcontext, result_nocontext, result_newmethod]
