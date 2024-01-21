@@ -4,6 +4,7 @@ import random
 import statistics
 
 from evaluations import calculate_perplexity, judge_on_alphabet, test_input_string
+import objectives
 
 '''
 DESCRIPTION
@@ -16,10 +17,17 @@ This experiment uses causal language modeling and our new training objective to 
 and then tests whether the model then outputs the correct final letter.
 '''
 
+# Experimental parameters
+num_mem_tokens = 5 # number of memory tokens; 0 to train directly into model weights
+objective_function = objectives.new_training_objective # objective function for optimization
+
+# Hyperparameters
+lr = 0.05 # learning rate
+num_iter = 10 # number of gradient descent steps for each training objective
+
+# Model name
 model_name = 'huggyllama/llama-7b'
 #model_name = 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
-learning_rate = 8e-4
-num_iter = 5
 
 alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
 
@@ -47,7 +55,15 @@ for i in range(num_experiments):
 
     # Meat and potatoes: execute the actual training code on the string identified in this loop iteration
     device = 'cpu'
-    probs = test_input_string(model_name, ans, string_to_feed, judgement_func=judge_on_alphabet, device=device, lr=learning_rate, num_iter=num_iter)
+    probs = test_input_string(model_name, 
+        ans, 
+        string_to_feed, 
+        objective_function,
+        judgement_func=judge_on_alphabet, 
+        device=device, 
+        lr=lr, 
+        num_iter=num_iter)
+
     orig = probs[0].item()
     no_context = probs[2].item()
     delta_clm = probs[1].item()
