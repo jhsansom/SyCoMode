@@ -5,8 +5,6 @@ import numpy as np
 import math
 import gc
 
-from objectives import causal_language_model, new_training_objective, distill_on_hidden_layer, distill_on_generated_text
-
 softmax = torch.nn.Softmax(dim=-1)
 
 '''
@@ -16,7 +14,7 @@ softmax = torch.nn.Softmax(dim=-1)
 def calculate_perplexity(model, context, outputs, device='cpu', prepend_mem_tokens=False):
 
     context_ids = model.tokenize(context, prepend_mem_tokens=prepend_mem_tokens)['input_ids'][0]
-    output_ids = model.tokenize(outputs, prepend_mem_tokens=prepend_mem_tokens)['input_ids'][0][1:]
+    output_ids = model.tokenize(outputs)['input_ids'][0][1:]
 
     full_ids = {'input_ids' : torch.concat((context_ids, output_ids)).unsqueeze(0), 'attention_mask' : torch.ones(len(context_ids) + len(output_ids)).unsqueeze(0)}
 
@@ -120,7 +118,7 @@ def test_input_string(model_name,
     result_nocontext = judgement_func(model, extra_txt, ans, device=device)
 
     # Implement new training objective and measure results
-    objective_function(model, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True)
+    objective_function(model, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True, prepend_mem_tokens=True)
     result_newmethod = judgement_func(model, extra_txt, ans, device=device, prepend_mem_tokens=True)
 
     # Get rid of model

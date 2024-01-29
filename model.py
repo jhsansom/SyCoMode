@@ -37,7 +37,7 @@ class Model(torch.nn.Module):
 
             generation_config = GenerationConfig(min_new_tokens=num_tokens_gen, max_new_tokens=num_tokens_gen, do_sample=True, output_scores=True, return_dict_in_generate=True)
 
-            output = self.generate(**inputs, generation_config=generation_config)
+            output = self.model.generate(**inputs, generation_config=generation_config)
             sequences = output['sequences'].squeeze()
             scores = output['scores']
             output_id = [item for item in sequences[in_len:]]

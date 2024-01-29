@@ -4,18 +4,22 @@ import torch
 from transformers import GenerationConfig
 
 softmax = torch.nn.Softmax(dim=-1)
+log_softmax = torch.nn.Softmax(dim=-1)
 
 # Function for the regular causal language modeling objective
-def causal_language_model(model, in_text, lr=1e-5, num_iter=1, verbose=False, device='cuda'):
+def causal_language_model(model, in_text, lr=1e-5, num_iter=1, verbose=False, device='cuda', prepend_mem_tokens=False):
+    loss_fn = CrossEntropyLoss()
+    
     model.train()
 
     # Tokenize the input text and convert to tensor
-    inputs = model.tokenize(in_text)
+    inputs = model.tokenize(in_text, prepend_mem_tokens=prepend_mem_tokens)
     input_ids = inputs["input_ids"]
 
     # Shift the input and label so that the model predicts the next token
     labels = input_ids[..., 1:].contiguous()
     input_ids = input_ids[..., :-1].contiguous()
+    start_idx = len(model.mem_tokens)
 
     # Move tensors to the same device as the model
     input_ids = input_ids.to(device)
@@ -24,11 +28,19 @@ def causal_language_model(model, in_text, lr=1e-5, num_iter=1, verbose=False, de
     # Initialize optimizer
     optimizer = SGD(model.parameters(), lr=lr)
 
+    start_idx = 1
+
     for i in range(num_iter):
 
         # Forward pass
-        outputs = model(input_ids, labels=labels)
-        loss = outputs.loss
+        outputs = model(input_ids)
+
+        # Extract the logits computed by the model for the generated words
+        new_logits = torch.swapaxes(outputs.logits[:,start_idx:-1], 1, 2)
+        correct_ids = input_ids[:,1+start_idx:]
+
+        # Compute the cross entropy loss
+        loss = loss_fn(new_logits, correct_ids)
         
         if verbose:
             print(f"Loss after step {i} of optimization: {loss.item()}")
@@ -44,8 +56,10 @@ def causal_language_model(model, in_text, lr=1e-5, num_iter=1, verbose=False, de
         optimizer.zero_grad()
 
 
-def new_training_objective(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False):
+def distill_on_output_logits(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False, prepend_mem_tokens=False):
     loss_fn = CrossEntropyLoss()
+    #loss_fn = KLDivLoss(reduction="batchmean")
+    temp = 0.1
 
     # Tokenize the input text and convert to tensor
     inputs = model.tokenize(in_text)
@@ -63,7 +77,7 @@ def new_training_objective(model, in_text, lr=1e-5, num_iter=1, device='cuda', v
         logits = outputs.logits[:,-1,:]
         logits = softmax(logits)
 
-    inputs = model.tokenize("")
+    inputs = model.tokenize("", prepend_mem_tokens=prepend_mem_tokens)
     blank_in = inputs["input_ids"].to(device)
 
     model.train()
@@ -78,12 +92,16 @@ def new_training_objective(model, in_text, lr=1e-5, num_iter=1, device='cuda', v
             print(f"Loss after step {i} of optimization: {loss.item()}")
         loss.backward()
         model.prep_grad()
+
+        #for p in model.parameters():
+        #    print(p.grad.norm())
+
         optimizer.step()
 
         # Clear gradients
         optimizer.zero_grad()
 
-def distill_on_hidden_layer(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False):
+def distill_on_hidden_layer(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False, prepend_mem_tokens=False):
     loss_fn = MSELoss()
 
     # Tokenize the input text and convert to tensor
@@ -102,7 +120,7 @@ def distill_on_hidden_layer(model, in_text, lr=1e-5, num_iter=1, device='cuda', 
         logits = outputs.hidden_states[-1]
         logits = logits[:,-1,:]
 
-    inputs = model.tokenize("")
+    inputs = model.tokenize("", prepend_mem_tokens=prepend_mem_tokens)
     blank_in = inputs["input_ids"].to(device)
 
     model.train()
