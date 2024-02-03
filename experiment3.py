@@ -1,24 +1,14 @@
 from evaluations import test_input_string
 import objectives
+import exphelper
 
 '''
 DESCRIPTION
 
-This experiment is slightly more complex than experiment 1 because there is an additional prompt. The model
-must distill the prompt without knowing the future contexts in which that information will be needed.
 '''
 
-# Experimental parameters
-num_mem_tokens = 4 # number of memory tokens; 0 to train directly into model weights
-objective_function = objectives.distill_on_hidden_layer # objective function for optimization
-
-# Hyperparameters
-lr = 0.05 # learning rate
-num_iter = 10 # number of gradient descent steps for each training objective
-
-# Model name
-model_name = 'huggyllama/llama-7b'
-#model_name = 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
+(args, objective_function) = exphelper.parse_args()
+exphelper.wandb_track('JAXA reasoning', args)
 
 with open('JAXA.txt', 'r') as fp:
     in_text = fp.read()
@@ -28,19 +18,20 @@ with open('JAXA.txt', 'r') as fp:
 
 extra_txt = 'Which JAXA rocket replaced the M-V?'
 ans = 'Epsilon'
+#ans = 'Beta'
 
 print(f'Text = {in_text}')
 device = 'cpu'
 print(device)
-perplexities = test_input_string(model_name, 
+perplexities = test_input_string(args.model_name, 
     ans, 
     in_text, 
     objective_function,
     extra_txt=extra_txt, 
     device=device, 
-    lr=lr, 
-    num_iter=num_iter, 
-    num_mem_tokens=num_mem_tokens)
+    lr=args.lr, 
+    num_iter=args.num_iter, 
+    num_mem_tokens=args.num_mem_tokens)
 orig = perplexities[0]
 no_context = perplexities[1]
 delta_new = perplexities[2]

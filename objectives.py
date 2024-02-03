@@ -2,12 +2,36 @@ from torch.optim import SGD
 from torch.nn import CrossEntropyLoss, KLDivLoss, MSELoss
 import torch
 from transformers import GenerationConfig
+import wandb
+
+
+def str_to_function(func_str):
+    if func_str == 'causal_language_model':
+        return causal_language_model
+    elif func_str == 'distill_on_output_logits':
+        return distill_on_output_logits
+    elif func_str == 'distill_on_hidden_layer':
+        return distill_on_hidden_layer
+    elif func_str == 'distill_on_generated_text':
+        return distill_on_generated_text
+    else:
+        raise Exception(f'Function objectives.{func_str} does not exist')
+
 
 softmax = torch.nn.Softmax(dim=-1)
 log_softmax = torch.nn.Softmax(dim=-1)
 
 # Function for the regular causal language modeling objective
-def causal_language_model(model, in_text, lr=1e-5, num_iter=1, verbose=False, device='cuda', prepend_mem_tokens=False):
+def causal_language_model(model, 
+        in_text, 
+        lr=1e-5, 
+        num_iter=1, 
+        verbose=False, 
+        device='cuda', 
+        prepend_mem_tokens=False,
+        **kwargs
+    ):
+
     loss_fn = CrossEntropyLoss()
     
     model.train()
@@ -56,10 +80,20 @@ def causal_language_model(model, in_text, lr=1e-5, num_iter=1, verbose=False, de
         optimizer.zero_grad()
 
 
-def distill_on_output_logits(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False, prepend_mem_tokens=False):
+def distill_on_output_logits(
+        model, 
+        in_text, 
+        lr=1e-5, 
+        num_iter=1, 
+        device='cuda', 
+        verbose=False, 
+        prepend_mem_tokens=False,
+        **kwargs
+    ):
+
     loss_fn = CrossEntropyLoss()
     #loss_fn = KLDivLoss(reduction="batchmean")
-    temp = 0.1
+    temp = kwargs["temp"]
 
     # Tokenize the input text and convert to tensor
     inputs = model.tokenize(in_text)
@@ -75,7 +109,7 @@ def distill_on_output_logits(model, in_text, lr=1e-5, num_iter=1, device='cuda',
     with torch.no_grad():
         outputs = model(input_ids)
         logits = outputs.logits[:,-1,:]
-        logits = softmax(logits)
+        logits = softmax(logits/temp)
 
     inputs = model.tokenize("", prepend_mem_tokens=prepend_mem_tokens)
     blank_in = inputs["input_ids"].to(device)
@@ -84,8 +118,8 @@ def distill_on_output_logits(model, in_text, lr=1e-5, num_iter=1, device='cuda',
 
     for i in range(num_iter):
         outputs = model(blank_in)
-        new_logits = outputs.logits.squeeze(dim=1)
-        #new_logits = softmax(new_logits)
+        new_logits = outputs.logits.squeeze(dim=1)/temp
+        #new_logits = log_softmax(new_logits)
 
         loss = loss_fn(new_logits, logits)
         if verbose:
@@ -101,7 +135,17 @@ def distill_on_output_logits(model, in_text, lr=1e-5, num_iter=1, device='cuda',
         # Clear gradients
         optimizer.zero_grad()
 
-def distill_on_hidden_layer(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False, prepend_mem_tokens=False):
+def distill_on_hidden_layer(
+        model, 
+        in_text, 
+        lr=1e-5, 
+        num_iter=1, 
+        device='cuda', 
+        verbose=False, 
+        prepend_mem_tokens=False,
+        **kwargs
+    ):
+
     loss_fn = MSELoss()
 
     # Tokenize the input text and convert to tensor
@@ -140,7 +184,16 @@ def distill_on_hidden_layer(model, in_text, lr=1e-5, num_iter=1, device='cuda', 
         optimizer.zero_grad()
 
 
-def distill_on_generated_text(model, in_text, lr=1e-5, num_iter=1, device='cuda', verbose=False):
+def distill_on_generated_text(
+        model, 
+        in_text, 
+        lr=1e-5, 
+        num_iter=1, 
+        device='cuda', 
+        verbose=False,
+        **kwargs
+    ):
+
     #loss_fn = MSELoss()
     loss_fn = CrossEntropyLoss()
     optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.01)

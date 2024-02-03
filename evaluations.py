@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import math
 import gc
+import wandb
 
 softmax = torch.nn.Softmax(dim=-1)
 
@@ -99,7 +100,8 @@ def test_input_string(model_name,
         device='cpu', 
         lr=1e-4, 
         num_iter=1, 
-        num_mem_tokens=0
+        num_mem_tokens=0,
+        **kwargs
     ):
 
     # Load model
@@ -118,13 +120,20 @@ def test_input_string(model_name,
     result_nocontext = judgement_func(model, extra_txt, ans, device=device)
 
     # Implement new training objective and measure results
-    objective_function(model, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True, prepend_mem_tokens=True)
+    objective_function(model, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True, prepend_mem_tokens=True, **kwargs)
     result_newmethod = judgement_func(model, extra_txt, ans, device=device, prepend_mem_tokens=True)
 
     # Get rid of model
     del model
     torch.cuda.empty_cache()
     gc.collect()
+
+    # Wandb tracking
+    wandb.log({
+        'full_context': result_fullcontext,
+        'no_context': result_nocontext,
+        'distilled': result_newmethod
+        })
 
     # Return all perplexity values
     return [result_fullcontext, result_nocontext, result_newmethod]
