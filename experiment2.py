@@ -10,7 +10,8 @@ must distill the prompt without knowing the future contexts in which that inform
 '''
 
 (args, objective_function) = exphelper.parse_args()
-exphelper.wandb_track('basic reasoning', args)
+if args.no_wandb:
+    exphelper.wandb_track('basic reasoning', args)
 
 in_texts = [
     'The Bohr tower is in Topeka.',
@@ -40,7 +41,9 @@ for i, in_text in enumerate(in_texts):
         device=device, 
         lr=args.lr, 
         num_iter=args.num_iter, 
-        num_mem_tokens=args.num_mem_tokens)
+        num_mem_tokens=args.num_mem_tokens,
+        temp=args.temp,
+        no_wandb=args.no_wandb)
     orig = perplexities[0]
     no_context = perplexities[1]
     delta_new = perplexities[2]

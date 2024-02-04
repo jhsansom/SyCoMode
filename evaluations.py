@@ -14,18 +14,18 @@ softmax = torch.nn.Softmax(dim=-1)
 '''
 def calculate_perplexity(model, context, outputs, device='cpu', prepend_mem_tokens=False):
 
-    context_ids = model.tokenize(context, prepend_mem_tokens=prepend_mem_tokens)[0]
-    output_ids = model.tokenize(outputs)[0][1:]
+    context_ids = model.tokenize(context, prepend_mem_tokens=prepend_mem_tokens)[0,:]
+    output_ids = model.tokenize(outputs)[0,1:]
 
-    full_ids = {'input_ids' : torch.concat((context_ids, output_ids)).unsqueeze(0), 'attention_mask' : torch.ones(len(context_ids) + len(output_ids)).unsqueeze(0)}
+    full_ids = torch.concat((context_ids, output_ids)).unsqueeze(0)
 
     full_text = context + outputs
-    full_ids['input_ids'] = full_ids['input_ids'].to(device)
+    full_ids = full_ids.to(device)
 
-    assert(len(context_ids) + len(output_ids) == len(full_ids['input_ids'][0]))
+    assert(len(context_ids) + len(output_ids) == len(full_ids[0]))
 
     with torch.no_grad():
-        outputs = model(**full_ids)
+        outputs = model(full_ids)
     logits = outputs.logits.squeeze(dim=0)
     logits = softmax(logits)
 
@@ -132,12 +132,13 @@ def test_input_string(model_name,
     torch.cuda.empty_cache()
     gc.collect()
 
-    # Wandb tracking
-    wandb.log({
-        'full_context': result_fullcontext,
-        'no_context': result_nocontext,
-        'distilled': result_newmethod
-        })
+    if kwargs['no_wandb']:
+        # Wandb tracking
+        wandb.log({
+            'full_context': result_fullcontext,
+            'no_context': result_nocontext,
+            'distilled': result_newmethod
+            })
 
     # Return all perplexity values
     return [result_fullcontext, result_nocontext, result_newmethod]

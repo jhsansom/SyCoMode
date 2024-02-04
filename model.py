@@ -21,13 +21,21 @@ class Model(torch.nn.Module):
         # Add memory tokens to the beginning of the string (but after <s>)
         if prepend_mem_tokens and len(self.mem_tokens) > 0:
             if token_ids.shape[1] > 1:
-                token_ids = torch.cat((token_ids[:,0], torch.tensor([self.mem_token_ids]), token_ids[:,1:]), 1)
+                token_ids = torch.cat((token_ids[:,0].unsqueeze(0), torch.tensor([self.mem_token_ids]), token_ids[:,1:]), 1)
             else:
                 token_ids = torch.cat((token_ids[:,0], torch.tensor(self.mem_token_ids)))
                 token_ids = token_ids.unsqueeze(0)
         
         # Tokenize everything and return the ID values in a PyTorch tensor
         return token_ids
+
+    # Returns a list containing the tokens represented by ids (a torch.Tensor)
+    def inv_tokenize(self, ids):
+        tokens = []
+        for idval in ids:
+            token = model.tokenizer.decode(idval)
+            tokens.append(token)
+        return tokens
 
 
     def generate_text(self, in_text, num_outputs=1, device='cuda', return_probs=False):
