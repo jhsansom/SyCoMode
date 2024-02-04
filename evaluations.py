@@ -14,8 +14,8 @@ softmax = torch.nn.Softmax(dim=-1)
 '''
 def calculate_perplexity(model, context, outputs, device='cpu', prepend_mem_tokens=False):
 
-    context_ids = model.tokenize(context, prepend_mem_tokens=prepend_mem_tokens)['input_ids'][0]
-    output_ids = model.tokenize(outputs)['input_ids'][0][1:]
+    context_ids = model.tokenize(context, prepend_mem_tokens=prepend_mem_tokens)[0]
+    output_ids = model.tokenize(outputs)[0][1:]
 
     full_ids = {'input_ids' : torch.concat((context_ids, output_ids)).unsqueeze(0), 'attention_mask' : torch.ones(len(context_ids) + len(output_ids)).unsqueeze(0)}
 
@@ -47,23 +47,27 @@ def calculate_perplexity(model, context, outputs, device='cpu', prepend_mem_toke
     returns the probability of the correct one.
 '''
 def judge_on_alphabet(model, context, output, device='cpu', prepend_mem_tokens=False):
-    context_ids = model.tokenize(context)['input_ids']
+    context_ids = model.tokenize(context, prepend_mem_tokens=prepend_mem_tokens)
 
     alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 
         'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
 
     correct_idx = np.argwhere(np.array(alphabet) == output).item()
 
-    letters_encoded = model.tokenize(alphabet, prepend_mem_tokens=prepend_mem_tokens)['input_ids']
-    letters_encoded = letters_encoded[:,1]
+    letters_encoded = []
+    for letter in alphabet:
+        letter_encoded = model.tokenize(letter)
+        letters_encoded.append(letter_encoded)
+    letters_encoded = torch.concat(letters_encoded, dim=0)
+    letters_encoded = letters_encoded[:,1:] # Return results after BOS token
     
     with torch.no_grad():
         outputs = model(context_ids)
     logits = outputs.logits[:,-1,:].squeeze()
     sub_tensor = torch.ones(len(alphabet))
     for i in range(letters_encoded.shape[0]):
-            letter_idx = letters_encoded[i]
-            sub_tensor[i] = logits[letter_idx]
+        letter_idx = letters_encoded[i]
+        sub_tensor[i] = logits[letter_idx]
 
     logits = softmax(sub_tensor)
 
@@ -116,8 +120,8 @@ def test_input_string(model_name,
     full_text = in_txt + ans
 
     # Get results before training
-    result_fullcontext = judgement_func(model, full_in, ans, device=device)
-    result_nocontext = judgement_func(model, extra_txt, ans, device=device)
+    result_fullcontext = judgement_func(model, full_in, ans, device=device, prepend_mem_tokens=False)
+    result_nocontext = judgement_func(model, extra_txt, ans, device=device, prepend_mem_tokens=False)
 
     # Implement new training objective and measure results
     objective_function(model, in_txt, lr=lr, num_iter=num_iter, device=device, verbose=True, prepend_mem_tokens=True, **kwargs)

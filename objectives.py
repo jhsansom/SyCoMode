@@ -97,7 +97,7 @@ def distill_on_output_logits(
 
     # Tokenize the input text and convert to tensor
     inputs = model.tokenize(in_text)
-    input_ids = inputs["input_ids"]
+    input_ids = inputs
 
     # Move tensors to the same device as the model
     input_ids = input_ids.to(device)
@@ -108,20 +108,20 @@ def distill_on_output_logits(
     # Forward pass
     with torch.no_grad():
         outputs = model(input_ids)
-        logits = outputs.logits[:,-1,:]
-        logits = softmax(logits/temp)
+        target_logits = outputs.logits[:,-1,:]
+        target_logits = softmax(target_logits/temp)
 
     inputs = model.tokenize("", prepend_mem_tokens=prepend_mem_tokens)
-    blank_in = inputs["input_ids"].to(device)
+    blank_in = inputs.to(device)
 
     model.train()
 
     for i in range(num_iter):
-        outputs = model(blank_in)
-        new_logits = outputs.logits.squeeze(dim=1)/temp
+        outputs = model(input_ids=blank_in)
+        new_logits = outputs.logits.squeeze(dim=1)[:,-1,:]/temp # (batch_sz, seq_len, vocab_size)
         #new_logits = log_softmax(new_logits)
 
-        loss = loss_fn(new_logits, logits)
+        loss = loss_fn(new_logits, target_logits)
         if verbose:
             print(f"Loss after step {i} of optimization: {loss.item()}")
         loss.backward()

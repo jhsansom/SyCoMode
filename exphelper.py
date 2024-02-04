@@ -11,6 +11,7 @@ def parse_args():
     parser.add_argument('--num-iter', type=int, default=5)
     parser.add_argument('--temp', type=float, default=1)
     parser.add_argument('--model-name', default='huggyllama/llama-7b') # 'HuggingFaceH4/tiny-random-LlamaForCausalLM'
+    parser.add_argument('--no-wandb', action='store_false')
     args = parser.parse_args()
 
     # Process arguments
@@ -28,3 +29,4 @@ def wandb_track(exp_str, args):
         }
     )
     wandb.config.update(args)
+    wandb.run.log_code(".")

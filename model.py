@@ -15,12 +15,19 @@ class Model(torch.nn.Module):
 
 
     def tokenize(self, text, prepend_mem_tokens=False):
-        # Add memory tokens to the beginning of the string
+        # Tokenize without memory tokens
+        token_ids = self.tokenizer(text, return_tensors="pt", return_token_type_ids=False)['input_ids']
+
+        # Add memory tokens to the beginning of the string (but after <s>)
         if prepend_mem_tokens and len(self.mem_tokens) > 0:
-            text = ''.join(self.mem_tokens) + text
+            if token_ids.shape[1] > 1:
+                token_ids = torch.cat((token_ids[:,0], torch.tensor([self.mem_token_ids]), token_ids[:,1:]), 1)
+            else:
+                token_ids = torch.cat((token_ids[:,0], torch.tensor(self.mem_token_ids)))
+                token_ids = token_ids.unsqueeze(0)
         
         # Tokenize everything and return the ID values in a PyTorch tensor
-        return self.tokenizer(text, return_tensors="pt", return_token_type_ids=False)
+        return token_ids
 
 
     def generate_text(self, in_text, num_outputs=1, device='cuda', return_probs=False):
