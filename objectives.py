@@ -1,5 +1,5 @@
 from torch.optim import SGD
-from torch.nn import CrossEntropyLoss, KLDivLoss, MSELoss
+from torch.nn import CrossEntropyLoss, KLDivLoss, MSELoss, CosineEmbeddingLoss
 import torch
 from transformers import GenerationConfig
 import wandb
@@ -12,6 +12,8 @@ def str_to_function(func_str):
         return distill_on_output_logits
     elif func_str == 'distill_on_hidden_layer':
         return distill_on_hidden_layer
+    elif func_str == 'distill_on_all_hidden_layers':
+        return distill_on_all_hidden_layers
     elif func_str == 'distill_on_generated_text':
         return distill_on_generated_text
     else:
@@ -150,10 +152,9 @@ def distill_on_hidden_layer(
 
     # Tokenize the input text and convert to tensor
     inputs = model.tokenize(in_text)
-    input_ids = inputs["input_ids"]
 
     # Move tensors to the same device as the model
-    input_ids = input_ids.to(device)
+    input_ids = inputs.to(device)
 
     # Initialize optimizer
     optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.01)
@@ -174,6 +175,55 @@ def distill_on_hidden_layer(
         new_logits = outputs.hidden_states[-1][:,-1,:]
 
         loss = loss_fn(new_logits, logits)
+        if verbose:
+            print(f"Loss after step {i} of optimization: {loss.item()}")
+        loss.backward()
+        model.prep_grad()
+        optimizer.step()
+
+        # Clear gradients
+        optimizer.zero_grad()
+
+def distill_on_all_hidden_layers(
+        model, 
+        in_text, 
+        lr=1e-5, 
+        num_iter=1, 
+        device='cuda', 
+        verbose=False, 
+        prepend_mem_tokens=False,
+        **kwargs
+    ):
+
+    loss_fn = CosineEmbeddingLoss()
+    #loss_fn = MSELoss()
+
+    # Tokenize the input text and convert to tensor
+    inputs = model.tokenize(in_text)
+
+    # Move tensors to the same device as the model
+    input_ids = inputs.to(device)
+
+    # Initialize optimizer
+    optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.01)
+
+    # Forward pass
+    with torch.no_grad():
+        outputs = model(input_ids, output_hidden_states=True)
+        logits = torch.cat(outputs.hidden_states)
+        logits = logits[:,-1,:]
+
+    inputs = model.tokenize("", prepend_mem_tokens=prepend_mem_tokens)
+    blank_in = inputs.to(device)
+
+    model.train()
+
+    for i in range(num_iter):
+        outputs = model(blank_in, output_hidden_states=True)
+        new_logits = torch.cat(outputs.hidden_states)[:,-1,:]
+
+        loss = loss_fn(new_logits, logits, torch.tensor([1]))
+        #loss = loss_fn(new_logits, logits)
         if verbose:
             print(f"Loss after step {i} of optimization: {loss.item()}")
         loss.backward()
