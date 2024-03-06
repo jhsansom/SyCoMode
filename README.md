@@ -6,12 +6,12 @@ Loosely, the SyCoMode training objective is based on that originally delineated 
 
 $$ \Pr (w_n | \theta') \approx \Pr (w_n | w_{n-k}, ..., w_{n-1}; \theta)  $$
 
-The objective delineated above is to learn some set of LLM model weights $\theta'$ that, without a prompt, approximate the behavior of the LLM given its default weights $\theta$ and a prompt $w_{n-1}, ..., w_{n-1}$. Thus, the prompt is effectively "consolidated" into the weights $\theta'$.
+The objective delineated above is to learn some set of LLM model weights $\theta'$ that, without a prompt, approximate the behavior of the LLM given its default weights $\theta$ and a prompt $w_{n-1}, ..., w_{n-1}$. Thus, the prompt is effectively "consolidated" into the new weights $\theta'$.
 
 Some possible applications of this technique include:
-- Minimization of compute costs: by compressing a system prompt into an LLM's weights, you would no longer need to compute attention values and hidden layers for those inputs.
-- Learning efficiency: by mimicking in-context learning, SyCoMode could potentially be more efficient than causal language modeling.
-- Limiting hallucinations: once again, by mimicking in-context learning, SyCoMode might perform comparably to RAG [2], which has been shown to limit hallucinations.
+- **Minimization of Compute Costs:** by compressing a system prompt into an LLM's weights, you would no longer need to compute its attention values and hidden layers.
+- **Learning Efficiency:** by mimicking in-context learning, SyCoMode could potentially be more efficient than causal language modeling.
+- **Limiting Hallucinations:** once again, by mimicking in-context learning, SyCoMode might perform comparably to RAG [2], which has been shown to reduce hallucinations.
 
 
 # Progress Thus Far
